@@ -529,6 +529,20 @@ http {
     }
     {{ end }}
 
+    {{ range $variable := (buildWhitelists $servers) }}
+    geo $whitelist_{{ $variable.ID }} {
+        default "false";
+
+        {{- range $trustedIP := $cfg.ProxyRealIPCIDR }}
+        proxy {{ $trustedIP }};
+        {{- end }}
+
+        {{- range $whitelistIP := $variable.Whitelist }}
+        {{ $whitelistIP }} "true";
+        {{- end }}
+    }
+    {{ end }}
+
     {{/* build all the required rate limit zones. Each annotation requires a dedicated zone */}}
     {{/* 1MB -> 16 thousand 64-byte states or about 8 thousand 128-byte states */}}
     {{ range $zone := (buildRateLimitZones $servers) }}
@@ -1258,10 +1272,10 @@ stream {
             {{ buildModSecurityForLocation $all.Cfg $location }}
 
             {{ if isLocationAllowed $location }}
-            {{ if gt (len $location.Whitelist.CIDR) 0 }}
-            {{ range $ip := $location.Whitelist.CIDR }}
-            allow {{ $ip }};{{ end }}
-            deny all;
+            {{ if gt (len $location.WhitelistID) 0 }}
+            if ($whitelist_{{ $location.WhitelistID }} = "false") {
+                return 403;
+            }
             {{ end }}
 
             {{ if not (isLocationInLocationList $location $all.Cfg.NoAuthLocations) }}

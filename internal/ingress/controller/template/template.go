@@ -38,6 +38,7 @@ import (
 
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	iSets "k8s.io/ingress-nginx/internal/sets"
 	"k8s.io/klog/v2"
 
 	"k8s.io/ingress-nginx/internal/ingress"
@@ -235,6 +236,7 @@ var (
 		"extractHostPort":                 extractHostPort,
 		"changeHostPort":                  changeHostPort,
 		"buildProxyPass":                  buildProxyPass,
+		"buildWhitelists":                 buildWhitelists,
 		"filterRateLimits":                filterRateLimits,
 		"buildRateLimitZones":             buildRateLimitZones,
 		"buildRateLimit":                  buildRateLimit,
@@ -787,6 +789,65 @@ rewrite "(?i)%s" %s break;
 
 	// default proxy_pass
 	return defProxyPass
+}
+
+type whitelistVariable struct {
+	ID        string   `json:"id"`
+	Whitelist []string `json:"whitelist"`
+}
+
+func (gv1 *whitelistVariable) Equal(gv2 *whitelistVariable) bool {
+	if gv1 == gv2 {
+		return true
+	}
+	if gv1 == nil || gv2 == nil {
+		return false
+	}
+
+	if len(gv1.Whitelist) != len(gv2.Whitelist) {
+		return false
+	}
+	return iSets.StringElementsMatch(gv1.Whitelist, gv2.Whitelist)
+}
+
+func buildWhitelists(input interface{}) []whitelistVariable {
+	var variables []whitelistVariable
+
+	servers, ok := input.([]*ingress.Server)
+	if !ok {
+		klog.Errorf("expected a '[]*ingress.Server' type but %T was returned", input)
+		return variables
+	}
+
+	for _, server := range servers {
+		for _, loc := range server.Locations {
+			if len(loc.Whitelist.CIDR) == 0 {
+				continue
+			}
+
+			wv := whitelistVariable{
+				ID:        fmt.Sprintf("%d", len(variables)),
+				Whitelist: loc.Whitelist.CIDR,
+			}
+
+			foundID := ""
+			for _, wv2 := range variables {
+				if wv.Equal(&wv2) {
+					foundID = wv2.ID
+					continue
+				}
+			}
+
+			if foundID == "" {
+				foundID = wv.ID
+				variables = append(variables, wv)
+			}
+
+			loc.WhitelistID = foundID
+		}
+	}
+
+	return variables
 }
 
 func filterRateLimits(input interface{}) []ratelimit.Config {

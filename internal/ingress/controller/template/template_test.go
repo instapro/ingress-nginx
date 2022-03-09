@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"k8s.io/ingress-nginx/internal/ingress/annotations/ipwhitelist"
 	"net"
 	"os"
 	"path"
@@ -1003,6 +1004,68 @@ func TestFilterRateLimits(t *testing.T) {
 
 	if !reflect.DeepEqual(expected, actual) {
 		t.Errorf("Expected '%v' but returned '%v'", expected, actual)
+	}
+}
+
+func TestBuildWhitelists(t *testing.T) {
+	servers := []*ingress.Server{
+		{
+			Locations: []*ingress.Location{
+				{
+					Whitelist: ipwhitelist.SourceRange{
+						CIDR: []string{"8.8.8.8/32"},
+					},
+				},
+				{
+					Whitelist: ipwhitelist.SourceRange{
+						CIDR: []string{"4.4.4.4/32"},
+					},
+				},
+				{
+					Whitelist: ipwhitelist.SourceRange{
+						CIDR: []string{"8.8.8.8/32"},
+					},
+				},
+				{
+					Whitelist: ipwhitelist.SourceRange{
+						CIDR: []string{"4.4.4.4/32", "8.8.8.8/32"},
+					},
+				},
+			},
+		},
+	}
+
+	expected := []whitelistVariable{
+		{
+			ID:        "0",
+			Whitelist: []string{"8.8.8.8/32"},
+		},
+		{
+			ID:        "1",
+			Whitelist: []string{"4.4.4.4/32"},
+		},
+		{
+			ID:        "2",
+			Whitelist: []string{"4.4.4.4/32", "8.8.8.8/32"},
+		},
+	}
+	actual := buildWhitelists(servers)
+
+	if !reflect.DeepEqual(expected, actual) {
+		t.Errorf("Expected '%v' but returned '%v'", expected, actual)
+	}
+
+	if servers[0].Locations[0].WhitelistID != "0" {
+		t.Errorf("Expected '%v' but returned '%v'", "0", servers[0].Locations[0].WhitelistID)
+	}
+	if servers[0].Locations[1].WhitelistID != "1" {
+		t.Errorf("Expected '%v' but returned '%v'", "1", servers[0].Locations[1].WhitelistID)
+	}
+	if servers[0].Locations[2].WhitelistID != "0" {
+		t.Errorf("Expected '%v' but returned '%v'", "0", servers[0].Locations[2].WhitelistID)
+	}
+	if servers[0].Locations[3].WhitelistID != "2" {
+		t.Errorf("Expected '%v' but returned '%v'", "0", servers[0].Locations[2].WhitelistID)
 	}
 }
 
